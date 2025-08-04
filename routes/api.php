@@ -45,6 +45,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('dashboard')->group(function () {
         Route::get('/', [DashboardController::class, 'index']);
         Route::post('/filter-period', [DashboardController::class, 'filterByPeriod']);
+        Route::post('/filter-month', [DashboardController::class, 'filterByMonth']);
     });
 
     // Rota para obter dados do usuário

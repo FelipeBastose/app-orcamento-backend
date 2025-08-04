@@ -33,6 +33,8 @@ class DashboardController extends Controller
                 'top_establishments' => $this->getTopEstablishments($userId, $currentMonth, $currentYear),
                 'insights' => $this->getInsights($userId, $currentMonth, $currentYear),
                 'monthly_comparison' => $this->getMonthlyComparison($userId),
+                'monthly_totals' => $this->getMonthlyTotals($userId),
+                'available_months' => $this->getAvailableMonths($userId)
             ]
         ]);
     }
@@ -285,5 +287,108 @@ class DashboardController extends Controller
             ->orderBy('total', 'desc')
             ->limit(10)
             ->get();
+    }
+
+    /**
+     * Filtrar dashboard por mês específico
+     */
+    public function filterByMonth(Request $request)
+    {
+        $userId = $request->user()->id;
+        $month = $request->input('month', now()->month);
+        $year = $request->input('year', now()->year);
+
+        return response()->json([
+            'success' => true,
+            'dashboard' => [
+                'current_month_summary' => $this->getMonthSummary($userId, $month, $year),
+                'expenses_by_category' => $this->getExpensesByCategory($userId, $month, $year),
+                'expenses_by_day' => $this->getExpensesByDay($userId, $month, $year),
+                'top_establishments' => $this->getTopEstablishments($userId, $month, $year),
+                'insights' => $this->getInsights($userId, $month, $year),
+                'monthly_comparison' => $this->getMonthlyComparison($userId),
+                'monthly_totals' => $this->getMonthlyTotals($userId),
+                'selected_month' => $month,
+                'selected_year' => $year
+            ]
+        ]);
+    }
+
+    /**
+     * Resumo para um mês específico
+     */
+    private function getMonthSummary($userId, $month, $year)
+    {
+        $transactions = Transaction::where('user_id', $userId)
+            ->whereMonth('transaction_date', $month)
+            ->whereYear('transaction_date', $year)
+            ->get();
+
+        if ($transactions->isEmpty()) {
+            return [
+                'total_amount' => 0,
+                'total_transactions' => 0,
+                'daily_average' => 0,
+                'month_projection' => 0
+            ];
+        }
+
+        $totalAmount = $transactions->sum('amount');
+        $totalTransactions = $transactions->count();
+        $daysInMonth = Carbon::create($year, $month)->daysInMonth;
+        $currentDay = now()->day;
+        
+        return [
+            'total_amount' => round($totalAmount, 2),
+            'total_transactions' => $totalTransactions,
+            'daily_average' => round($totalAmount / $daysInMonth, 2),
+            'month_projection' => round(($totalAmount / $currentDay) * $daysInMonth, 2)
+        ];
+    }
+
+    /**
+     * Totais mensais para gráfico comparativo
+     */
+    private function getMonthlyTotals($userId)
+    {
+        return Transaction::where('user_id', $userId)
+            ->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month, SUM(amount) as total, COUNT(*) as count')
+            ->groupBy('year', 'month')
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->limit(12)
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'year' => $item->year,
+                    'month' => $item->month,
+                    'month_name' => Carbon::create($item->year, $item->month)->format('M/Y'),
+                    'total' => round($item->total, 2),
+                    'count' => $item->count,
+                ];
+            })
+            ->reverse()
+            ->values();
+    }
+
+    /**
+     * Meses disponíveis para filtro
+     */
+    private function getAvailableMonths($userId)
+    {
+        return Transaction::where('user_id', $userId)
+            ->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month')
+            ->groupBy('year', 'month')
+            ->orderBy('year', 'desc')
+            ->orderBy('month', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'year' => $item->year,
+                    'month' => $item->month,
+                    'label' => Carbon::create($item->year, $item->month)->format('F Y'),
+                    'short_label' => Carbon::create($item->year, $item->month)->format('M/Y'),
+                ];
+            });
     }
 }

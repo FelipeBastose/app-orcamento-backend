@@ -31,20 +31,9 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Criar diretório da aplicação
 WORKDIR /var/www/html
 
-# Copiar composer.json e composer.lock
-COPY composer.json composer.lock ./
-
-# Instalar dependências do Composer
-RUN composer install --no-dev --optimize-autoloader --no-scripts
-
-# Copiar código da aplicação
-COPY . .
-
-# Rodar comandos post-install do Composer
-RUN composer run-script post-autoload-dump
-
-# Configurar permissões
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Criar usuário www-data se não existir e configurar permissões
+RUN groupadd -g 1000 appgroup || true \
+    && useradd -u 1000 -ms /bin/bash -g appgroup appuser || true
 
 # Expor porta 8000
 EXPOSE 8000

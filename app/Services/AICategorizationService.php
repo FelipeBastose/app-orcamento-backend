@@ -4,7 +4,8 @@ namespace App\Services;
 
 use App\Models\Category;
 use App\Models\Transaction;
-use OpenAI;
+use GeminiAPI\Client;
+use GeminiAPI\Resources\Parts\TextPart;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -36,25 +37,20 @@ class AICategorizationService
             // Preparar prompt para IA
             $prompt = $this->buildPrompt($transaction);
             
-            // Chamada para OpenAI
-            $apiKey = env('OPENAI_API_KEY');
+            // Chamada para Gemini
+            $apiKey = env('GEMINI_API_KEY');
             if (empty($apiKey)) {
                 // Simulação sem IA real
                 return $this->getFallbackCategorization($transaction);
             }
             
-            $client = OpenAI::client($apiKey);
-            $response = $client->chat()->create([
-                'model' => 'gpt-3.5-turbo',
-                'messages' => [
-                    ['role' => 'system', 'content' => $this->getSystemPrompt()],
-                    ['role' => 'user', 'content' => $prompt]
-                ],
-                'max_tokens' => 150,
-                'temperature' => 0.3,
-            ]);
+            $client = new Client($apiKey);
+            $fullPrompt = $this->getSystemPrompt() . "\n\n" . $prompt;
+            $response = $client->generativeModel('gemini-1.5-flash')->generateContent(
+                new TextPart($fullPrompt)
+            );
 
-            $result = $this->parseAIResponse($response->choices[0]->message->content);
+            $result = $this->parseAIResponse($response->text());
             
             // Cache por 30 dias
             Cache::put($cacheKey, $result, now()->addDays(30));
@@ -110,12 +106,19 @@ class AICategorizationService
             return "- {$category->name}: {$category->description}";
         })->join("\n");
 
-        return "Você é um especialista em categorização de gastos financeiros.
+        return "Você é um especialista em categorização de gastos financeiros brasileiros.
 
 Categorias disponíveis:
 {$categoriesText}
 
-Sua tarefa é analisar transações de cartão de crédito e classificá-las na categoria mais apropriada.
+ESTABELECIMENTOS ÓBVIOS (alta confiança 0.9+):
+- AUTO POSTO, POSTO, SHELL, PETROBRAS, IPIRANGA = Transporte
+- CARREFOUR, EXTRA, WALMART, ATACADÃO, MERCADO, SUPERMERCADO = Alimentação  
+- FARMACODE, DROGASIL, PACHECO, FARMÁCIA, DROGARIA = Saúde
+- SUSHI BAR, RESTAURANTE, LANCHONETE, PIZZARIA = Alimentação
+- CINEMA, CINEMARK, NETFLIX, SPOTIFY = Lazer
+- UBER, 99, TAXI = Transporte
+- ZARA, C&A, RIACHUELO = Vestuário
 
 Responda SEMPRE no formato JSON:
 {
@@ -125,10 +128,12 @@ Responda SEMPRE no formato JSON:
 }
 
 Regras:
+- Para estabelecimentos óbvios, use confidence 0.9 ou maior
 - confidence deve ser um número entre 0.0 e 1.0
 - Se não tiver certeza (confidence < 0.7), use \"Outros\"
 - Seja preciso e considere o contexto brasileiro
-- Analise tanto a descrição quanto o estabelecimento";
+- Analise tanto a descrição quanto o estabelecimento
+- Priorize o nome do estabelecimento sobre a descrição da transação";
     }
 
     /**
@@ -213,14 +218,83 @@ Classifique esta transação:";
         $text = strtolower($transaction->description . ' ' . $transaction->establishment);
         
         $keywordMap = [
-            'Alimentação' => ['supermercado', 'mercado', 'restaurante', 'lanchonete', 'padaria', 'açougue', 'delivery', 'ifood', 'uber eats', 'rappi'],
-            'Transporte' => ['uber', 'cabify', '99', 'posto', 'combustivel', 'gasolina', 'pedagio', 'metro', 'onibus'],
-            'Saúde' => ['farmacia', 'drogaria', 'hospital', 'clinica', 'medico', 'dentista', 'laboratorio'],
-            'Lazer' => ['cinema', 'shopping', 'parque', 'show', 'teatro', 'netflix', 'spotify', 'amazon prime'],
-            'Compras Online' => ['mercado livre', 'amazon', 'magazine luiza', 'americanas', 'shopee', 'aliexpress'],
-            'Vestuário' => ['loja', 'roupa', 'calcado', 'sapato', 'tenis', 'zara', 'c&a', 'riachuelo'],
-            'Casa & Utilidades' => ['casa', 'móveis', 'decoração', 'limpeza', 'casa bahia', 'leroy merlin'],
-            'Serviços' => ['streaming', 'assinatura', 'netflix', 'spotify', 'google', 'microsoft'],
+            'Alimentação' => [
+                // Supermercados principais
+                'supermercado', 'mercado', 'carrefour', 'extra', 'pao de acucar', 'walmart', 'big', 'atacadao', 'sam', 'assai', 'makro', 'tenda', 'guanabara', 'mondial',
+                // Mercearias e pequenos mercados
+                'mercearia', 'emporio', 'hortifruti', 'frutaria', 'quitanda', 'mercadinho', 'minimercado',
+                // Açougues e similares
+                'acougue', 'peixaria', 'avicola', 'casa de carnes',
+                // Padarias
+                'padaria', 'panificadora', 'confeitaria', 'bakery',
+                // Restaurantes e lanchonetes
+                'restaurante', 'lanchonete', 'lancheria', 'pizzaria', 'hamburgueria', 'sorveteria', 'doceria', 'cafeteria', 'cafe', 'bistrô', 'bistro',
+                // Comida específica
+                'sushi', 'sushi bar', 'japonesa', 'pizza', 'hamburguer', 'burger', 'pastel', 'tapioca', 'açai', 'milk shake',
+                // Fast food
+                'mcdonald', 'burger king', 'subway', 'kfc', 'pizza hut', 'dominos', 'bobs', 'giraffas', 'habib',
+                // Delivery
+                'delivery', 'ifood', 'uber eats', 'rappi', 'zé delivery', 'james delivery'
+            ],
+            'Transporte' => [
+                // Postos de combustível
+                'posto', 'auto posto', 'combustivel', 'gasolina', 'etanol', 'diesel', 'shell', 'petrobras', 'ipiranga', 'br', 'alesat', 'esso', 'texaco', 'raizen',
+                // Transporte público
+                'metro', 'onibus', 'pst', 'viacao', 'rodoviaria', 'terminal', 'bilhete unico', 'cartao transporte',
+                // Apps de transporte
+                'uber', 'cabify', '99', 'taxi', 'moto taxi', 'bla bla car',
+                // Outros transportes
+                'pedagio', 'estacionamento', 'valet', 'zona azul', 'rotativo', 'oficina', 'auto center', 'pneu', 'oleo'
+            ],
+            'Saúde' => [
+                // Farmácias principais
+                'farmacia', 'drogaria', 'farmacode', 'drogasil', 'pacheco', 'pague menos', 'ultrafarma', 'droga raia', 'sao joao', 'nissei', 'venancio', 'popular', 'indiana',
+                // Serviços médicos
+                'hospital', 'clinica', 'medico', 'dentista', 'odontologo', 'oftalmologista', 'cardiologista', 'dermatologista', 'psicólogo', 'fisioterapeuta',
+                // Laboratórios e exames
+                'laboratorio', 'fleury', 'dasa', 'sabin', 'hermes pardini', 'exame', 'raio x', 'ultrassom', 'ressonancia',
+                // Planos de saúde
+                'unimed', 'hapvida', 'sulamerica', 'bradesco saude', 'amil', 'golden cross', 'prevent senior'
+            ],
+            'Lazer' => [
+                // Cinema e entretenimento
+                'cinema', 'cinemark', 'uci', 'movie', 'ingresso', 'teatro', 'show', 'espetaculo', 'concerto',
+                // Streaming e assinaturas digitais
+                'netflix', 'spotify', 'amazon prime', 'disney', 'globoplay', 'paramount', 'hbo', 'apple tv', 'youtube premium', 'deezer',
+                // Bares e vida noturna
+                'bar', 'pub', 'balada', 'festa', 'clube', 'boteco', 'choperia', 'cervejaria',
+                // Parques e lazer
+                'parque', 'shopping', 'playland', 'game', 'boliche', 'sinuca', 'bilhar', 'karaoke'
+            ],
+            'Compras Online' => [
+                'mercado livre', 'ml', 'amazon', 'magazine luiza', 'magalu', 'americanas', 'shopee', 'aliexpress', 'netshoes', 'submarino', 'extra.com', 'casas bahia.com', 'pontofrio.com', 'walmart.com', 'carrefour.com'
+            ],
+            'Vestuário' => [
+                // Lojas de roupas
+                'zara', 'c&a', 'riachuelo', 'renner', 'marisa', 'leader', 'cea', 'youcom', 'forever 21', 'hering', 'malwee',
+                // Calçados
+                'nike', 'adidas', 'puma', 'havaianas', 'melissa', 'grendene', 'olympikus', 'mizuno', 'arezzo', 'schutz',
+                // Genérico
+                'roupa', 'calcado', 'sapato', 'tenis', 'sandalia', 'bota', 'chinelo', 'moda', 'boutique'
+            ],
+            'Casa & Utilidades' => [
+                // Construção e materiais
+                'leroy merlin', 'telhanorte', 'dicico', 'construcao', 'material', 'tinta', 'eletrico', 'hidraulica', 'ferragem', 'parafuso',
+                // Móveis e decoração
+                'tok stok', 'etna', 'casa bahia', 'ponto frio', 'fast shop', 'mobly', 'madeira madeira', 'moveis', 'decoracao', 'estofado',
+                // Limpeza e casa
+                'limpeza', 'detergente', 'sabao', 'amaciante', 'desinfetante', 'utilidades', 'bazar', 'armarinho'
+            ],
+            'Serviços' => [
+                // Assinaturas digitais
+                'google', 'microsoft', 'office 365', 'adobe', 'dropbox', 'icloud', 'onedrive',
+                // Correios e envios
+                'correios', 'sedex', 'pac', 'envio', 'frete',
+                // Serviços profissionais
+                'cartorio', 'despachante', 'advogado', 'contador', 'contabilidade', 'juridico',
+                // Serviços pessoais
+                'barbeiro', 'cabeleireiro', 'salao', 'estetica', 'manicure', 'pedicure', 'massagem', 'spa'
+            ],
         ];
         
         foreach ($keywordMap as $categoryName => $keywords) {
@@ -343,15 +417,37 @@ Classifique esta transação:";
         $description = strtolower($transaction->description);
         $establishment = strtolower($transaction->establishment ?? '');
         
-        // Categorização baseada em palavras-chave
+        // Categorização baseada em palavras-chave expandida
         $keywords = [
-            'Alimentação' => ['mercado', 'supermercado', 'padaria', 'restaurante', 'lanchonete', 'delivery', 'ifood', 'uber eats'],
-            'Transporte' => ['posto', 'gasolina', 'combustivel', 'uber', 'taxi', 'metro', 'onibus'],
-            'Saúde' => ['farmacia', 'drogaria', 'hospital', 'clinica', 'dentista', 'medico'],
-            'Lazer' => ['cinema', 'teatro', 'netflix', 'spotify', 'amazon prime'],
-            'Shopping' => ['shopping', 'magazine', 'loja', 'americanas', 'mercado livre'],
-            'Casa' => ['casa', 'construção', 'eletrico', 'agua', 'luz'],
-            'Educação' => ['escola', 'faculdade', 'curso', 'livro'],
+            'Alimentação' => [
+                'mercado', 'supermercado', 'carrefour', 'extra', 'walmart', 'atacadao', 'mercearia', 'emporio', 'hortifruti',
+                'padaria', 'restaurante', 'lanchonete', 'sushi', 'sushi bar', 'pizzaria', 'hamburgueria', 'mcdonald', 'burger king',
+                'delivery', 'ifood', 'uber eats', 'rappi'
+            ],
+            'Transporte' => [
+                'posto', 'auto posto', 'gasolina', 'combustivel', 'shell', 'petrobras', 'ipiranga', 'br', 'alesat',
+                'uber', 'taxi', '99', 'cabify', 'metro', 'onibus', 'pedagio', 'estacionamento'
+            ],
+            'Saúde' => [
+                'farmacia', 'drogaria', 'farmacode', 'drogasil', 'pacheco', 'pague menos', 'ultrafarma', 'droga raia',
+                'hospital', 'clinica', 'dentista', 'medico', 'laboratorio', 'unimed', 'hapvida'
+            ],
+            'Lazer' => [
+                'cinema', 'cinemark', 'teatro', 'netflix', 'spotify', 'amazon prime', 'disney', 'bar', 'balada', 'show'
+            ],
+            'Compras Online' => [
+                'mercado livre', 'ml', 'amazon', 'magazine luiza', 'magalu', 'americanas', 'shopee', 'aliexpress'
+            ],
+            'Vestuário' => [
+                'zara', 'c&a', 'riachuelo', 'renner', 'nike', 'adidas', 'roupa', 'calcado', 'sapato', 'tenis'
+            ],
+            'Casa & Utilidades' => [
+                'leroy merlin', 'construção', 'eletrico', 'casa bahia', 'tok stok', 'moveis', 'decoracao', 'limpeza'
+            ],
+            'Serviços' => [
+                'google', 'microsoft', 'correios', 'cartorio', 'barbeiro', 'cabeleireiro', 'estetica'
+            ],
+            'Educação' => ['escola', 'faculdade', 'curso', 'livro', 'udemy', 'coursera'],
             'Outros' => []
         ];
         

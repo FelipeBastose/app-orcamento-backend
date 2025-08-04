@@ -139,7 +139,7 @@ class TransactionController extends Controller
                             // Classificar automaticamente com IA
                             try {
                                 $aiResult = $this->aiService->categorizeTransaction($transaction);
-                                if ($aiResult['category_id'] && $aiResult['confidence'] >= 0.7) {
+                                if ($aiResult['category_id'] && $aiResult['confidence'] >= 0.3) {
                                     $transaction->update([
                                         'category_id' => $aiResult['category_id'],
                                         'is_categorized_by_ai' => true,
