@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Transaction;
 use App\Models\Category;
+use App\Models\CreditCard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -29,6 +30,7 @@ class DashboardController extends Controller
             'dashboard' => [
                 'current_month_summary' => $this->getCurrentMonthSummary($userId),
                 'expenses_by_category' => $this->getExpensesByCategory($userId, $currentMonth, $currentYear),
+                'expenses_by_credit_card' => $this->getExpensesByCreditCard($userId, $currentMonth, $currentYear),
                 'expenses_by_day' => $this->getExpensesByDay($userId, $currentMonth, $currentYear),
                 'top_establishments' => $this->getTopEstablishments($userId, $currentMonth, $currentYear),
                 'insights' => $this->getInsights($userId, $currentMonth, $currentYear),
@@ -86,6 +88,32 @@ class DashboardController extends Controller
                     'category_id' => $item->category_id,
                     'category_name' => $item->category ? $item->category->name : 'Sem categoria',
                     'category_color' => $item->category ? $item->category->color : '#cccccc',
+                    'total' => round($item->total, 2),
+                    'count' => $item->count,
+                    'percentage' => 0, // Será calculado no frontend
+                ];
+            });
+    }
+
+    /**
+     * Gastos por cartão de crédito (para gráfico de pizza)
+     */
+    private function getExpensesByCreditCard($userId, $month, $year)
+    {
+        return Transaction::with('creditCard')
+            ->where('user_id', $userId)
+            ->whereNotNull('credit_card_id')
+            ->selectRaw('credit_card_id, SUM(amount) as total, COUNT(*) as count')
+            ->groupBy('credit_card_id')
+            ->orderBy('total', 'desc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'credit_card_id' => $item->credit_card_id,
+                    'credit_card_name' => $item->creditCard ? $item->creditCard->name : 'Cartão não identificado',
+                    'credit_card_institution' => $item->creditCard ? $item->creditCard->institution : 'N/A',
+                    'credit_card_brand' => $item->creditCard ? $item->creditCard->brand : 'N/A',
+                    'credit_card_color' => $item->creditCard ? $item->creditCard->color : '#cccccc',
                     'total' => round($item->total, 2),
                     'count' => $item->count,
                     'percentage' => 0, // Será calculado no frontend
@@ -191,8 +219,27 @@ class DashboardController extends Controller
     /**
      * Comparação mensal (últimos 6 meses)
      */
-    private function getMonthlyComparison($userId, $months = 6)
+    private function getMonthlyComparison($userId, $months = 6, $filterMonth = null, $filterYear = null)
     {
+        // Se há filtro específico, retorna apenas os dados do mês filtrado
+        if ($filterMonth && $filterYear) {
+            $total = Transaction::where('user_id', $userId)
+                ->whereMonth('transaction_date', $filterMonth)
+                ->whereYear('transaction_date', $filterYear)
+                ->sum('amount');
+
+            $date = Carbon::create($filterYear, $filterMonth, 1);
+            
+            return [[
+                'month' => $date->format('M/Y'),
+                'month_name' => $date->translatedFormat('M Y'),
+                'total' => round($total, 2),
+                'year' => (int)$filterYear,
+                'month_number' => (int)$filterMonth,
+            ]];
+        }
+
+        // Comportamento original quando não há filtro
         $result = [];
         
         for ($i = $months - 1; $i >= 0; $i--) {
@@ -306,8 +353,8 @@ class DashboardController extends Controller
                 'expenses_by_day' => $this->getExpensesByDay($userId, $month, $year),
                 'top_establishments' => $this->getTopEstablishments($userId, $month, $year),
                 'insights' => $this->getInsights($userId, $month, $year),
-                'monthly_comparison' => $this->getMonthlyComparison($userId),
-                'monthly_totals' => $this->getMonthlyTotals($userId),
+                'monthly_comparison' => $this->getMonthlyComparison($userId, null, $month, $year),
+                'monthly_totals' => $this->getMonthlyTotals($userId, $month, $year),
                 'selected_month' => $month,
                 'selected_year' => $year
             ]
@@ -349,14 +396,21 @@ class DashboardController extends Controller
     /**
      * Totais mensais para gráfico comparativo
      */
-    private function getMonthlyTotals($userId)
+    private function getMonthlyTotals($userId, $filterMonth = null, $filterYear = null)
     {
-        return Transaction::where('user_id', $userId)
-            ->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month, SUM(amount) as total, COUNT(*) as count')
+        $query = Transaction::where('user_id', $userId);
+        
+        // Se há filtro específico, aplica o filtro
+        if ($filterMonth && $filterYear) {
+            $query->whereMonth('transaction_date', $filterMonth)
+                  ->whereYear('transaction_date', $filterYear);
+        }
+        
+        return $query->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month, SUM(amount) as total, COUNT(*) as count')
             ->groupBy('year', 'month')
             ->orderBy('year', 'desc')
             ->orderBy('month', 'desc')
-            ->limit(12)
+            ->limit($filterMonth && $filterYear ? 1 : 12)
             ->get()
             ->map(function ($item) {
                 return [

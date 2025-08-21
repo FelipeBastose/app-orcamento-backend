@@ -12,6 +12,7 @@ class Transaction extends Model
     protected $fillable = [
         'user_id',
         'category_id',
+        'credit_card_id',
         'transaction_date',
         'description',
         'establishment',
@@ -49,6 +50,14 @@ class Transaction extends Model
     }
 
     /**
+     * Relacionamento com cartão de crédito
+     */
+    public function creditCard()
+    {
+        return $this->belongsTo(CreditCard::class);
+    }
+
+    /**
      * Scope para transações do mês atual
      */
     public function scopeCurrentMonth($query)
@@ -71,5 +80,13 @@ class Transaction extends Model
     public function scopeByCategory($query, $categoryId)
     {
         return $query->where('category_id', $categoryId);
+    }
+
+    /**
+     * Scope para transações por cartão de crédito
+     */
+    public function scopeByCreditCard($query, $creditCardId)
+    {
+        return $query->where('credit_card_id', $creditCardId);
     }
 }

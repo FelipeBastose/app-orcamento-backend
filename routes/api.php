@@ -6,6 +6,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\CreditCardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -30,6 +31,16 @@ Route::middleware('auth:sanctum')->group(function () {
     
     // Categorias
     Route::apiResource('categories', CategoryController::class);
+    
+    // Cartões de Crédito
+    Route::prefix('credit-cards')->group(function () {
+        Route::get('/', [CreditCardController::class, 'index']);
+        Route::post('/', [CreditCardController::class, 'store']);
+        Route::put('/{id}', [CreditCardController::class, 'update']);
+        Route::delete('/{id}', [CreditCardController::class, 'destroy']);
+        Route::get('/statistics', [CreditCardController::class, 'statistics']);
+        Route::get('/{id}/transactions', [CreditCardController::class, 'transactions']);
+    });
     
     // Transações
     Route::prefix('transactions')->group(function () {

@@ -26,7 +26,7 @@ class TransactionController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Transaction::with('category')
+        $query = Transaction::with(['category', 'creditCard'])
             ->where('user_id', $request->user()->id);
 
         // Filtro por categoria
@@ -58,6 +58,11 @@ class TransactionController extends Controller
             $query->where('establishment', 'like', '%' . $request->establishment . '%');
         }
 
+        // Filtro por cartão de crédito
+        if ($request->has('credit_card_id') && $request->credit_card_id) {
+            $query->where('credit_card_id', $request->credit_card_id);
+        }
+
         // Ordenação
         $sortBy = $request->get('sort_by', 'transaction_date');
         $sortOrder = $request->get('sort_order', 'desc');
@@ -78,6 +83,7 @@ class TransactionController extends Controller
     {
         $request->validate([
             'csv_file' => 'required|file|mimes:csv,txt|max:2048',
+            'credit_card_id' => 'nullable|exists:credit_cards,id',
         ]);
 
         try {
@@ -86,7 +92,7 @@ class TransactionController extends Controller
             $fullPath = Storage::path($path);
 
             // Processar CSV síncrono
-            $results = $this->processCSVFile($fullPath, $request->user()->id);
+            $results = $this->processCSVFile($fullPath, $request->user()->id, $request->credit_card_id);
 
             // Limpar arquivo após processamento
             Storage::delete($path);
@@ -110,7 +116,7 @@ class TransactionController extends Controller
     /**
      * Processar arquivo CSV
      */
-    private function processCSVFile($filePath, $userId)
+    private function processCSVFile($filePath, $userId, $creditCardId = null)
     {
         $processedCount = 0;
         $errors = [];
@@ -123,7 +129,7 @@ class TransactionController extends Controller
             while (($data = fgetcsv($handle, 1000, ',')) !== false) {
                 try {
                     // Formato esperado: data, title, amount
-                    $transactionData = $this->parseCSVRow($data, $userId);
+                    $transactionData = $this->parseCSVRow($data, $userId, $creditCardId);
                     
                     if ($transactionData) {
                         // Verificar duplicatas
@@ -174,7 +180,7 @@ class TransactionController extends Controller
     /**
      * Parsear linha do CSV
      */
-    private function parseCSVRow($data, $userId)
+    private function parseCSVRow($data, $userId, $creditCardId = null)
     {
         // Formato esperado: data, title, amount
         if (count($data) < 3) {
@@ -229,6 +235,7 @@ class TransactionController extends Controller
 
             return [
                 'user_id' => $userId,
+                'credit_card_id' => $creditCardId,
                 'transaction_date' => $date->format('Y-m-d'),
                 'description' => $title,
                 'establishment' => $establishment,
@@ -267,7 +274,7 @@ class TransactionController extends Controller
      */
     public function show($id, Request $request)
     {
-        $transaction = Transaction::with('category')
+        $transaction = Transaction::with(['category', 'creditCard'])
             ->where('user_id', $request->user()->id)
             ->findOrFail($id);
 
