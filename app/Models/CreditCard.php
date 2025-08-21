@@ -63,3 +63,4 @@ class CreditCard extends Model
         return $query->where('brand', $brand);
     }
 }
+
