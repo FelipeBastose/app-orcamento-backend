@@ -7,6 +7,7 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CreditCardController;
+use App\Http\Controllers\CsvMappingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -48,8 +49,22 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{id}', [TransactionController::class, 'show']);
         Route::post('/upload-csv', [TransactionController::class, 'uploadCSV']);
         Route::put('/{id}/category', [TransactionController::class, 'updateCategory']);
-        Route::post('/recategorize-ai', [TransactionController::class, 'recategorizeWithAI']);
-        Route::get('/ai-stats', [TransactionController::class, 'getAIStats']);
+        Route::post('/', [TransactionController::class, 'store']);
+        Route::put('/{id}', [TransactionController::class, 'update']);
+        Route::delete('/{id}', [TransactionController::class, 'destroy']);
+        Route::get('/stats', [TransactionController::class, 'getStats']);
+        Route::get('/search', [TransactionController::class, 'search']);
+    });
+    
+    // Mapeamentos de CSV
+    Route::prefix('csv-mappings')->group(function () {
+        Route::get('/', [CsvMappingController::class, 'index']);
+        Route::get('/{id}', [CsvMappingController::class, 'show']);
+        Route::post('/', [CsvMappingController::class, 'store']);
+        Route::put('/{id}', [CsvMappingController::class, 'update']);
+        Route::delete('/{id}', [CsvMappingController::class, 'destroy']);
+        Route::get('/institution/{institution}', [CsvMappingController::class, 'getByInstitution']);
+        Route::post('/{id}/test', [CsvMappingController::class, 'test']);
     });
     
     // Dashboard
