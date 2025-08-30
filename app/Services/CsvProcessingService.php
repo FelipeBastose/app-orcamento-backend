@@ -246,7 +246,27 @@ class CsvProcessingService
             $rawAmount = str_replace(',', '.', $rawAmount);
         }
         
+        // Log para debug
+        Log::info('Valor após processamento: ' . $rawAmount);
+        
         $amount = floatval($rawAmount);
+        
+        // Se o valor for 0, tentar uma abordagem mais agressiva para formato brasileiro
+        if ($amount == 0 && strpos($amountString, 'R$') !== false) {
+            // Remover R$ e espaços
+            $rawAmount = str_replace(['R$', ' '], '', $amountString);
+            
+            // Se tem vírgula, é formato brasileiro
+            if (strpos($rawAmount, ',') !== false) {
+                // Se tem ponto também, é formato 1.234,56
+                if (strpos($rawAmount, '.') !== false) {
+                    $rawAmount = str_replace('.', '', $rawAmount);
+                }
+                $rawAmount = str_replace(',', '.', $rawAmount);
+                $amount = floatval($rawAmount);
+                Log::info('Valor corrigido para formato brasileiro: ' . $amount);
+            }
+        }
         
         // Para Nubank, valores negativos são receitas (entradas)
         if (isset($amountFormat['negative_values_are_income']) && $amountFormat['negative_values_are_income']) {

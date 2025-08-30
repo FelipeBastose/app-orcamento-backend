@@ -157,3 +157,4 @@ Para adicionar suporte a um novo banco:
 ### Problema: Valores não são parseados
 - Verificar configurações de formato de valor
 - Confirmar símbolos de moeda e separadores
+
