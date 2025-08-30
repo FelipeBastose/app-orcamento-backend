@@ -21,7 +21,7 @@ class CsvProcessingService
     /**
      * Processar arquivo CSV usando mapeamento específico
      */
-    public function processCSVFile($filePath, $userId, $creditCardId = null)
+    public function processCSVFile($filePath, $userId, $creditCardId = null, $month = null, $year = null)
     {
         $processedCount = 0;
         $errors = [];
@@ -41,7 +41,7 @@ class CsvProcessingService
             
             while (($data = fgetcsv($handle, 1000, $mapping->delimiter)) !== false) {
                 try {
-                    $transactionData = $this->parseCSVRowWithMapping($data, $userId, $creditCardId, $mapping);
+                    $transactionData = $this->parseCSVRowWithMapping($data, $userId, $creditCardId, $mapping, $month, $year);
                     
                     if ($transactionData) {
                         // Verificar duplicatas
@@ -123,7 +123,7 @@ class CsvProcessingService
     /**
      * Parsear linha do CSV usando mapeamento
      */
-    private function parseCSVRowWithMapping($data, $userId, $creditCardId, CsvMapping $mapping)
+    private function parseCSVRowWithMapping($data, $userId, $creditCardId, CsvMapping $mapping, $month = null, $year = null)
     {
         $columnMapping = $mapping->column_mapping;
         
@@ -167,6 +167,10 @@ class CsvProcessingService
             $category = isset($columnMapping['category']) ? trim($data[$columnMapping['category']]) : null;
             $type = isset($columnMapping['type']) ? trim($data[$columnMapping['type']]) : null;
 
+            // Extrair mês e ano da data
+            $month = $date->format('m');
+            $year = $date->format('Y');
+
             return [
                 'user_id' => $userId,
                 'credit_card_id' => $creditCardId,
@@ -175,6 +179,8 @@ class CsvProcessingService
                 'establishment' => $establishment,
                 'amount' => $amount,
                 'raw_description' => $description,
+                'month' => $month,
+                'year' => $year,
                 'metadata' => [
                     'original_row' => $data,
                     'imported_at' => now()->toISOString(),
@@ -215,8 +221,8 @@ class CsvProcessingService
      */
     private function parseAmount($amountString, $amountFormat = null)
     {
-        $rawAmount = $amountString;
-
+        $rawAmount = trim($amountString);
+        
         // Remover símbolo de moeda (R$, US$, etc)
         if (!empty($amountFormat['currency_symbol'])) {
             $rawAmount = str_replace($amountFormat['currency_symbol'], '', $rawAmount);
@@ -224,14 +230,45 @@ class CsvProcessingService
             $rawAmount = str_replace(['R$', '$'], '', $rawAmount);
         }
 
-        // PRIMEIRO: trocar vírgula por ponto (formato brasileiro)
-        $rawAmount = str_replace(',', '.', $rawAmount);
-        
-        // DEPOIS: remover TODOS os espaços e caracteres especiais, manter apenas números, ponto e sinal negativo
-        $rawAmount = preg_replace('/[^\d.\-]/', '', $rawAmount);
+        // Remover espaços novamente
+        $rawAmount = trim($rawAmount);
 
-        // Converter para float - garantir que seja ponto como decimal
-        $amount = (float) str_replace(',', '.', $rawAmount);
+        // Lógica específica por instituição
+        $institution = $amountFormat['institution'] ?? 'unknown';
+        
+        switch (strtolower($institution)) {
+            case 'nubank':
+                // Nubank: formato americano (ponto como decimal)
+                // Ex: -4.39, 15.49, 18.27
+                // Manter como está, apenas limpar
+                $rawAmount = preg_replace('/[^\d.\-]/', '', $rawAmount);
+                break;
+                
+            case 'inter':
+                // Inter: formato brasileiro (vírgula como decimal)
+                // Ex: R$ 422,39, R$ 1.234,56
+                // Primeiro trocar vírgula por ponto, depois limpar
+                $rawAmount = str_replace(',', '.', $rawAmount);
+                $rawAmount = preg_replace('/[^\d.\-]/', '', $rawAmount);
+                break;
+                
+            default:
+                // Lógica genérica: detectar formato automaticamente
+                if (strpos($rawAmount, ',') !== false && strpos($rawAmount, '.') !== false) {
+                    // Formato brasileiro: 1.234,56
+                    $rawAmount = str_replace('.', '', $rawAmount);
+                    $rawAmount = str_replace(',', '.', $rawAmount);
+                } elseif (strpos($rawAmount, ',') !== false) {
+                    // Formato com vírgula: 1234,56
+                    $rawAmount = str_replace(',', '.', $rawAmount);
+                }
+                // Limpar caracteres não numéricos
+                $rawAmount = preg_replace('/[^\d.\-]/', '', $rawAmount);
+                break;
+        }
+
+        // Converter para float
+        $amount = (float) $rawAmount;
 
         // Para Nubank: valores negativos são receitas
         if (!empty($amountFormat['negative_values_are_income'])) {

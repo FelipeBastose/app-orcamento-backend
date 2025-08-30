@@ -128,7 +128,7 @@ class DashboardController extends Controller
     {
         return Transaction::where('user_id', $userId)
             ->selectRaw('DATE(transaction_date) as date, SUM(amount) as total')
-            ->groupBy('date')
+            ->groupBy(DB::raw('DATE(transaction_date)'))
             ->orderBy('date', 'desc')
             ->limit(30)
             ->get()
@@ -191,7 +191,7 @@ class DashboardController extends Controller
         // Dia que mais gastou
         $biggestDay = Transaction::where('user_id', $userId)
             ->selectRaw('DATE(transaction_date) as date, SUM(amount) as total')
-            ->groupBy('date')
+            ->groupBy(DB::raw('DATE(transaction_date)'))
             ->orderBy('total', 'desc')
             ->first();
 
@@ -319,7 +319,7 @@ class DashboardController extends Controller
         return Transaction::where('user_id', $userId)
             ->whereBetween('transaction_date', [$startDate, $endDate])
             ->selectRaw('DATE(transaction_date) as date, SUM(amount) as total')
-            ->groupBy('date')
+            ->groupBy(DB::raw('DATE(transaction_date)'))
             ->orderBy('date')
             ->get();
     }
@@ -407,7 +407,7 @@ class DashboardController extends Controller
         }
         
         return $query->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month, SUM(amount) as total, COUNT(*) as count')
-            ->groupBy('year', 'month')
+            ->groupBy(DB::raw('YEAR(transaction_date)'), DB::raw('MONTH(transaction_date)'))
             ->orderBy('year', 'desc')
             ->orderBy('month', 'desc')
             ->limit($filterMonth && $filterYear ? 1 : 12)
@@ -432,7 +432,7 @@ class DashboardController extends Controller
     {
         return Transaction::where('user_id', $userId)
             ->selectRaw('YEAR(transaction_date) as year, MONTH(transaction_date) as month')
-            ->groupBy('year', 'month')
+            ->groupBy(DB::raw('YEAR(transaction_date)'), DB::raw('MONTH(transaction_date)'))
             ->orderBy('year', 'desc')
             ->orderBy('month', 'desc')
             ->get()

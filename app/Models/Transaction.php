@@ -17,6 +17,8 @@ class Transaction extends Model
         'description',
         'establishment',
         'amount',
+        'month',
+        'year',
         'card_last_digits',
         'transaction_id',
         'raw_description',
@@ -88,5 +90,13 @@ class Transaction extends Model
     public function scopeByCreditCard($query, $creditCardId)
     {
         return $query->where('credit_card_id', $creditCardId);
+    }
+
+    /**
+     * Scope para transações por mês e ano da fatura
+     */
+    public function scopeByInvoicePeriod($query, $month, $year)
+    {
+        return $query->where('month', $month)->where('year', $year);
     }
 }

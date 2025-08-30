@@ -11,7 +11,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(\App\Services\CsvProcessingService::class, function ($app) {
+            return new \App\Services\CsvProcessingService(
+                $app->make(\App\Services\AICategorizationService::class)
+            );
+        });
     }
 
     /**
