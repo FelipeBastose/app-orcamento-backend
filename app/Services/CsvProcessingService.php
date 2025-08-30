@@ -146,13 +146,7 @@ class CsvProcessingService
             }
 
             // Processar valor
-            Log::info('Processando valor: ' . $amountString, [
-                'amount_format' => $mapping->amount_format,
-                'institution' => $mapping->institution
-            ]);
-            
             $amount = $this->parseAmount($amountString, $mapping->amount_format);
-            Log::info('Valor processado: ' . $amount);
             
             if ($amount == 0) {
                 throw new \Exception("Valor inválido: {$amountString}");
@@ -211,70 +205,43 @@ class CsvProcessingService
     /**
      * Parsear valor monetário usando configurações
      */
-    private function parseAmount($amountString, $amountFormat)
+    private function parseAmount($amountString, $amountFormat = null)
     {
         $rawAmount = $amountString;
-        
-        // Remover símbolo de moeda se configurado
-        if (isset($amountFormat['remove_currency_symbol']) && $amountFormat['remove_currency_symbol'] && isset($amountFormat['currency_symbol']) && $amountFormat['currency_symbol']) {
+
+        // Remover símbolo de moeda (R$, US$, etc)
+        if (!empty($amountFormat['currency_symbol'])) {
             $rawAmount = str_replace($amountFormat['currency_symbol'], '', $rawAmount);
+        } else {
+            $rawAmount = str_replace(['R$', '$'], '', $rawAmount);
         }
-        
-        // Remover espaços
+
+        // Remover espaços e caracteres não numéricos relevantes
         $rawAmount = trim($rawAmount);
-        
-        // Processar separadores de milhares e decimais
-        if (isset($amountFormat['thousands_separator']) && isset($amountFormat['decimal_separator']) && $amountFormat['thousands_separator'] && $amountFormat['decimal_separator']) {
-            // Formato brasileiro: 1.234,56
-            if (strpos($rawAmount, $amountFormat['thousands_separator']) !== false && 
-                strpos($rawAmount, $amountFormat['decimal_separator']) !== false) {
-                $rawAmount = str_replace($amountFormat['thousands_separator'], '', $rawAmount);
-                $rawAmount = str_replace($amountFormat['decimal_separator'], '.', $rawAmount);
-            } elseif (strpos($rawAmount, $amountFormat['decimal_separator']) !== false) {
-                // Formato: 1234,56
-                $rawAmount = str_replace($amountFormat['decimal_separator'], '.', $rawAmount);
-            }
+        $rawAmount = preg_replace('/[^\d,.\-]/', '', $rawAmount); // mantém números, vírgula, ponto e sinal negativo
+
+        // Detectar separador decimal configurado ou padrão brasileiro
+        $decimalSeparator   = $amountFormat['decimal_separator']   ?? ',';
+        $thousandsSeparator = $amountFormat['thousands_separator'] ?? '.';
+
+        // Se contém milhares e decimal
+        if (strpos($rawAmount, $thousandsSeparator) !== false && strpos($rawAmount, $decimalSeparator) !== false) {
+            $rawAmount = str_replace($thousandsSeparator, '', $rawAmount);
+            $rawAmount = str_replace($decimalSeparator, '.', $rawAmount);
+        } elseif (strpos($rawAmount, $decimalSeparator) !== false) {
+            // Apenas decimal (ex: "1234,56")
+            $rawAmount = str_replace($decimalSeparator, '.', $rawAmount);
         }
-        
-        // Fallback para formato brasileiro padrão se não configurado
-        if (strpos($rawAmount, ',') !== false && strpos($rawAmount, '.') !== false) {
-            // Formato: 1.234,56 (padrão brasileiro)
-            $rawAmount = str_replace('.', '', $rawAmount);
-            $rawAmount = str_replace(',', '.', $rawAmount);
-        } elseif (strpos($rawAmount, ',') !== false) {
-            // Formato: 1234,56
-            $rawAmount = str_replace(',', '.', $rawAmount);
-        }
-        
-        // Log para debug
-        Log::info('Valor após processamento: ' . $rawAmount);
-        
+
+        // Converter para float
         $amount = floatval($rawAmount);
-        
-        // Se o valor for 0, tentar uma abordagem mais agressiva para formato brasileiro
-        if ($amount == 0 && strpos($amountString, 'R$') !== false) {
-            // Remover R$ e espaços
-            $rawAmount = str_replace(['R$', ' '], '', $amountString);
-            
-            // Se tem vírgula, é formato brasileiro
-            if (strpos($rawAmount, ',') !== false) {
-                // Se tem ponto também, é formato 1.234,56
-                if (strpos($rawAmount, '.') !== false) {
-                    $rawAmount = str_replace('.', '', $rawAmount);
-                }
-                $rawAmount = str_replace(',', '.', $rawAmount);
-                $amount = floatval($rawAmount);
-                Log::info('Valor corrigido para formato brasileiro: ' . $amount);
-            }
-        }
-        
-        // Para Nubank, valores negativos são receitas (entradas)
-        if (isset($amountFormat['negative_values_are_income']) && $amountFormat['negative_values_are_income']) {
-            // Manter o valor como está (negativo para receitas, positivo para despesas)
+
+        // Para Nubank: valores negativos são receitas
+        if (!empty($amountFormat['negative_values_are_income'])) {
             return $amount;
         }
-        
-        // Para outros bancos, sempre retornar valor absoluto
+
+        // Outros bancos: sempre valor absoluto
         return abs($amount);
     }
 
