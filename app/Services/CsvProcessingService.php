@@ -167,9 +167,8 @@ class CsvProcessingService
             $category = isset($columnMapping['category']) ? trim($data[$columnMapping['category']]) : null;
             $type = isset($columnMapping['type']) ? trim($data[$columnMapping['type']]) : null;
 
-            // Extrair mês e ano da data
-            $month = $date->format('m');
-            $year = $date->format('Y');
+            // Usar mês e ano selecionados pelo usuário (mês/ano da fatura)
+            // Não extrair da data da transação
 
             return [
                 'user_id' => $userId,
