@@ -26,42 +26,31 @@ class AICategorizationService
     public function categorizeTransaction(Transaction $transaction)
     {
         try {
-            Log::info('=== INICIANDO CATEGORIZAÇÃO POR IA ===');
-            Log::info('Transação: ' . $transaction->description . ' | Estabelecimento: ' . $transaction->establishment);
-            
             // Verificar se a classificação já está em cache
             $cacheKey = 'ai_category_' . md5($transaction->description . $transaction->establishment);
             $cached = Cache::get($cacheKey);
             
             if ($cached) {
-                Log::info('Resultado encontrado em cache: ' . json_encode($cached));
                 return $cached;
             }
 
             // Preparar prompt para IA
             $prompt = $this->buildPrompt($transaction);
-            Log::info('Prompt preparado: ' . $prompt);
             
             // Chamada para Gemini
             $apiKey = env('GEMINI_API_KEY');
-            Log::info('API Key configurada: ' . (!empty($apiKey) ? 'SIM' : 'NÃO'));
-            
             if (empty($apiKey)) {
-                Log::warning('API Key não encontrada, usando fallback');
                 // Simulação sem IA real
                 return $this->getFallbackCategorization($transaction);
             }
             
-            Log::info('Chamando API Gemini...');
             $client = new Client($apiKey);
             $fullPrompt = $this->getSystemPrompt() . "\n\n" . $prompt;
             $response = $client->generativeModel('gemini-1.5-flash')->generateContent(
                 new TextPart($fullPrompt)
             );
 
-            Log::info('Resposta da API recebida: ' . $response->text());
             $result = $this->parseAIResponse($response->text());
-            Log::info('Resultado parseado: ' . json_encode($result));
             
             // Cache por 30 dias
             Cache::put($cacheKey, $result, now()->addDays(30));
@@ -71,12 +60,10 @@ class AICategorizationService
         } catch (\Exception $e) {
             Log::error('Erro na classificação por IA: ' . $e->getMessage(), [
                 'transaction_id' => $transaction->id,
-                'description' => $transaction->description,
-                'trace' => $e->getTraceAsString()
+                'description' => $transaction->description
             ]);
             
             // Fallback: classificar com base em palavras-chave
-            Log::info('Usando fallback por palavras-chave');
             return $this->fallbackCategorization($transaction);
         }
     }

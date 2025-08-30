@@ -146,7 +146,15 @@ class CsvProcessingService
             }
 
             // Processar valor
-            $amount = $this->parseAmount($amountString, $mapping->amount_format);
+            Log::info('Processando valor: ' . $amountString, [
+                'amount_format' => $mapping->amount_format,
+                'institution' => $mapping->institution
+            ]);
+            
+            // Criar array com amount_format + instituição para o parseAmount
+            $amountConfig = array_merge($mapping->amount_format ?? [], ['institution' => $mapping->institution]);
+            $amount = $this->parseAmount($amountString, $amountConfig);
+            Log::info('Valor processado: ' . $amount);
             
             if ($amount == 0) {
                 throw new \Exception("Valor inválido: {$amountString}");
@@ -216,25 +224,14 @@ class CsvProcessingService
             $rawAmount = str_replace(['R$', '$'], '', $rawAmount);
         }
 
-        // Remover espaços e caracteres não numéricos relevantes
-        $rawAmount = trim($rawAmount);
-        $rawAmount = preg_replace('/[^\d,.\-]/', '', $rawAmount); // mantém números, vírgula, ponto e sinal negativo
+        // PRIMEIRO: trocar vírgula por ponto (formato brasileiro)
+        $rawAmount = str_replace(',', '.', $rawAmount);
+        
+        // DEPOIS: remover TODOS os espaços e caracteres especiais, manter apenas números, ponto e sinal negativo
+        $rawAmount = preg_replace('/[^\d.\-]/', '', $rawAmount);
 
-        // Detectar separador decimal configurado ou padrão brasileiro
-        $decimalSeparator   = $amountFormat['decimal_separator']   ?? ',';
-        $thousandsSeparator = $amountFormat['thousands_separator'] ?? '.';
-
-        // Se contém milhares e decimal
-        if (strpos($rawAmount, $thousandsSeparator) !== false && strpos($rawAmount, $decimalSeparator) !== false) {
-            $rawAmount = str_replace($thousandsSeparator, '', $rawAmount);
-            $rawAmount = str_replace($decimalSeparator, '.', $rawAmount);
-        } elseif (strpos($rawAmount, $decimalSeparator) !== false) {
-            // Apenas decimal (ex: "1234,56")
-            $rawAmount = str_replace($decimalSeparator, '.', $rawAmount);
-        }
-
-        // Converter para float
-        $amount = floatval($rawAmount);
+        // Converter para float - garantir que seja ponto como decimal
+        $amount = (float) str_replace(',', '.', $rawAmount);
 
         // Para Nubank: valores negativos são receitas
         if (!empty($amountFormat['negative_values_are_income'])) {
